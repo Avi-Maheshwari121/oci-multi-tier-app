@@ -101,7 +101,78 @@ All networking screenshots are available under `/screenshots/`.
 ---
 
 
+## 🖥️ Compute Tier (Private Application Server + Jump Host)
 
+### **Overview**
+The compute layer for this architecture consists of a secure Jump Host in the public subnet and a private application server in an isolated private subnet. This design reflects real-world cloud architectures where backend workloads never expose public endpoints.
+
+---
+
+### **🔐 Jump Host (Public Subnet)**
+Because OCI Bastion is disabled in this student tenancy, a Jump Host pattern was implemented to securely access private resources.
+
+- **Instance:** `jump-host`
+- **Subnet:** `public-subnet` (10.0.1.0/24)
+- **NSG:** `nsg-public`
+- **Access Flow:**  
+  `Laptop → SSH (public IP) → Jump Host → SSH (private IP) → app-server-1`
+
+This creates a secure, controlled entry point into the VCN.
+
+---
+
+### **🖥️ Private Application Server**
+The backend application server is deployed fully isolated from public exposure.
+
+- **Instance:** `app-server-1`
+- **Subnet:** `private-subnet` (10.0.2.0/24)
+- **NSG:** `nsg-private`
+- **Public IP:** None  
+- **Purpose:** Backend web server for the Load Balancer
+
+SSH access is possible only via the Jump Host, ensuring strict network isolation.
+
+---
+
+### **🌐 NGINX Deployment (Backend Service)**
+NGINX was installed and configured as the backend service for the upcoming Load Balancer.
+
+Commands executed on the private instance:
+
+```bash
+sudo dnf install -y nginx
+sudo systemctl enable nginx
+sudo systemctl start nginx
+echo "<h1>Welcome from app-server-1 (OCI Private Subnet)</h1>" | sudo tee /usr/share/nginx/html/index.html
+A custom test page confirms successful backend setup.
+
+📸 Verification Screenshots Included
+
+Compute instance overview
+
+Jump host overview
+
+SSH access to jump-host
+
+SSH access to private instance
+
+NGINX running
+
+Custom index page written
+
+These screenshots validate correct compute-tier deployment and secure access configuration.
+
+Status
+
+✔️ Jump Host configured
+
+✔️ Private compute deployed
+
+✔️ Secure SSH path established
+
+✔️ NGINX backend running
+
+⏳ Ready for Load Balancer integration
 
 ---
 
