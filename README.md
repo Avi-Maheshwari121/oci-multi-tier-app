@@ -1,181 +1,161 @@
-# OCI Multi-Tier Architecture Project
+# OCI Multi-Tier Architecture & SDN Root Cause Analysis
 
-This repository documents a complete multi-tier cloud architecture deployed on Oracle Cloud Infrastructure (OCI).  
-The goal of this project is to demonstrate practical Oracle Cloud Architect-level skills involving networking, compute, databases, load balancing, and security.
+## 📖 Project Overview
 
----
+This repository documents the design and implementation of a scalable **3-Tier Web Application** on Oracle Cloud Infrastructure (OCI). The primary goal was to architect a secure, production-grade cloud environment using strict network isolation.
 
-## 📌 Project Overview
-
-This project includes:
-- Virtual Cloud Network (VCN) design
-- Public and private subnets
-- Internet Gateway & NAT Gateway setup
-- Compute instance (VM.Standard.A1.Flex)
-- Load Balancer (HTTP)
-- Autonomous Database (ATP)
-- Network Security Groups / Security Lists
-- Monitoring & Alarms
-- Architecture diagrams
-- Console screenshots for validation
+During the implementation phase on OCI Free Tier (A1.Flex instances), a critical infrastructure anomaly was identified. This project evolved from a standard web deployment into a **complex network debugging case study**, resulting in the discovery of a platform-level SDN race condition.
 
 ---
 
-## 📂 Repository Structure
+## 🏗️ Infrastructure & Architecture
 
-architecture-diagrams/ → All architecture PNG diagrams
-screenshots/ → All OCI console screenshots
-instance-config/ → Server setup scripts & configs
-terraform/ → Infrastructure as Code (optional)
-README.md → Documentation
+The networking layer was configured using best practices for tier isolation, security, and controlled connectivity.
 
+### **1. VCN & Subnet Design**
 
----
+The architecture uses a "Hub and Spoke" logical isolation model within a single Virtual Cloud Network.
 
-## 🚀 Current Progress
-
-This section will be updated as we build the project:
-
-## 🌐 Networking Architecture (Completed)
-
-The networking layer for this OCI multi-tier architecture has been fully configured using best practices for tier isolation, security, and controlled connectivity.
-
-### **VCN & Subnet Design**
-- **VCN Name:** `project-vcn`
-- **CIDR:** `10.0.0.0/16`
-- **Public Subnet:** `10.0.1.0/24` (Load Balancer / Bastion / Public Tier)
-- **Private Subnet:** `10.0.2.0/24` (Application Compute Instance)
-
-This separates external-facing and internal workloads following standard cloud architectural patterns.
-
----
-
-### **Gateways**
-- **Internet Gateway:** Enables inbound/outbound access for public subnet.
-- **NAT Gateway:** Allows private instances secure outbound access (updates/packages).
-- **Service Gateway:** Provides private access to OCI services (Autonomous DB, Object Storage).
-
----
-
-### **Route Tables**
-- **Public Route Table:**  
-  - `0.0.0.0/0 → Internet Gateway`
-- **Private Route Table:**  
-  - `0.0.0.0/0 → NAT Gateway`
-
-This ensures private-tier resources remain unreachable from the public internet.
-
----
-
-### **Security Configuration**
-#### **Security Lists (Subnet-Level)**
-- Minimal configuration to avoid conflicts:
-  - **Ingress:** None
-  - **Egress:** Allow all (`0.0.0.0/0`)
-
-#### **Network Security Groups (Resource-Level)**
-- **nsg-public**
-  - Allow HTTP (80) from anywhere
-  - Allow HTTPS (443) from anywhere
-  - Allow SSH (22) only from admin IP
-- **nsg-private**
-  - Allow HTTP only from the public tier / load balancer
-  - Allow internal DB port traffic when needed
-  - Allow outbound internet via NAT Gateway
-
-NSGs enforce least-privilege and clean tier isolation.
-
----
-
-### **Status**
-- ✔️ VCN created  
-- ✔️ Subnets configured  
-- ✔️ Gateways deployed  
-- ✔️ Route tables applied  
-- ✔️ Security Lists configured  
-- ✔️ Network Security Groups created  
-- ⏳ NSGs will be attached to compute and load balancer during deployment  
-
-All networking screenshots are available under `/screenshots/`.
-
----
+* **VCN Name:** `project-vcn`
+* **CIDR Block:** `10.0.0.0/16`
+* **Gateways:**
+* **Internet Gateway:** For public subnet traffic.
+* **NAT Gateway:** For private subnet outbound access (patching/updates).
+* **Service Gateway:** Provides private access to OCI services (Autonomous DB, Object Storage).
 
 
-## 🖥️ Compute Tier (Private Application Server + Jump Host)
 
-### **Overview**
-The compute layer for this architecture consists of a secure Jump Host in the public subnet and a private application server in an isolated private subnet. This design reflects real-world cloud architectures where backend workloads never expose public endpoints.
+| Subnet Type | CIDR          | Purpose 
+| ---         |               |
+| **Public**  | `10.0.1.0/24` | Hosts the Jump Host and Load Balancer (Reverse Proxy) 
+| **Private** | `10.0.2.0/24` | Hosts the Application Server (No Public IP) 
+| **Database**| `10.0.3.0/24` | Reserved for Autonomous Database (ATP) 
 
----
+### **2. Compute Tier Configuration**
 
-### **🔐 Jump Host (Public Subnet)**
-Because OCI Bastion is disabled in this student tenancy, a Jump Host pattern was implemented to securely access private resources.
+#### **🛡️ Bastion / Jump Host**
 
-- **Instance:** `jump-host`
-- **Subnet:** `public-subnet` (10.0.1.0/24)
-- **NSG:** `nsg-public`
-- **Access Flow:**  
-  `Laptop → SSH (public IP) → Jump Host → SSH (private IP) → app-server-1`
+A secured entry point for managing private resources.
 
-This creates a secure, controlled entry point into the VCN.
+* **Instance Name:** `jump-host-1`
+* **Subnet:** `public-subnet` (`10.0.1.0/24`)
+* **Public IP:** Assigned
+* **Security:** SSH keys restricted to admin IP.
 
----
+#### **🖥️ Private Application Server**
 
-### **🖥️ Private Application Server**
 The backend application server is deployed fully isolated from public exposure.
 
-- **Instance:** `app-server-1`
-- **Subnet:** `private-subnet` (10.0.2.0/24)
-- **NSG:** `nsg-private`
-- **Public IP:** None  
-- **Purpose:** Backend web server for the Load Balancer
+* **Instance Name:** `app-server-1`
+* **Subnet:** `private-subnet` (`10.0.2.0/24`)
+* **Network Security Group:** `nsg-private`
+* **Public IP:** None
+* **Service:** NGINX configured as a backend web server.
 
-SSH access is possible only via the Jump Host, ensuring strict network isolation.
+**Integration:**
+SSH access is strictly chained via the Jump Host. The NGINX service serves a custom validation page:
+
+```html
+<h1>Welcome from app-server-1 (OCI Private Subnet)</h1>
+
+```
 
 ---
 
-### **🌐 NGINX Deployment (Backend Service)**
-NGINX was installed and configured as the backend service for the upcoming Load Balancer.
+## 🛑 Incident Report: The "Ghost VNIC" Failure
 
-Commands executed on the private instance:
+**Severity:** Critical (Total Loss of Connectivity)
+**Component:** OCI SDN Control Plane / Hypervisor
+**Region:** EU-FRANKFURT (A1.Flex Availability Domain)
+
+### Symptom
+
+Despite correct Route Tables (`0.0.0.0/0` via NAT) and permissive Security Lists, the Reverse Proxy/Jump Host was unable to communicate with the App Server.
 
 ```bash
-sudo dnf install -y nginx
-sudo systemctl enable nginx
-sudo systemctl start nginx
-echo "<h1>Welcome from app-server-1 (OCI Private Subnet)</h1>" | sudo tee /usr/share/nginx/html/index.html
-A custom test page confirms successful backend setup.
+# Attempting to curl the App Server from the Public Subnet
+curl -v http://10.0.2.38
+> Error: No route to host
 
-📸 Verification Screenshots Included
-
-Compute instance overview
-
-Jump host overview
-
-SSH access to jump-host
-
-SSH access to private instance
-
-NGINX running
-
-Custom index page written
-
-These screenshots validate correct compute-tier deployment and secure access configuration.
-
-Status
-
-✔️ Jump Host configured
-
-✔️ Private compute deployed
-
-✔️ Secure SSH path established
-
-✔️ NGINX backend running
-
-⏳ Ready for Load Balancer integration
+```
 
 ---
 
-## 🔗 About This Project
+## 🕵️‍♂️ Technical Deep Dive: Root Cause Analysis
 
-This project is part of my Oracle Cloud Infrastructure Architect learning path and demonstrates real hands-on implementation of cloud architecture components.
+We performed a layered OSI investigation to isolate the failure. Below is the step-by-step debugging log.
+
+### Phase 1: Layer 2 Analysis (Data Link)
+
+We suspected an ARP failure. We checked the Neighbor Table and ran a packet capture.
+
+**Command:** `ip neigh`
+
+* **Result:** `FAILED` (No ARP entry for `10.0.2.38`).
+
+**Command:** `sudo tcpdump -n -i any host 10.0.2.38`
+
+* **Observation:** We saw outbound `SYN` packets generated by the OS, but **0 packets** were captured on the receiving interface.
+* **Conclusion:** Packets were being dropped *before* leaving the hypervisor virtual interface.
+
+### Phase 2: Layer 3 & Firewall Analysis (Network)
+
+We verified the routing table and OS firewalls to ensure no local blocking.
+
+**Command:** `ip route show`
+
+* **Output:** `10.0.2.0/24 via 10.0.1.1` (Correct Gateway).
+
+**Command:** `sudo systemctl stop firewalld` / `iptables -F`
+
+* **Result:** No change in connectivity.
+
+### Phase 3: The Breakthrough (Metadata Service)
+
+We hypothesized a mismatch between the **Control Plane** (what the OCI Console shows) and the **Data Plane** (what the instance actually has). We queried the OCI Instance Metadata Service (IMDS).
+
+**Command:**
+
+```bash
+curl http://169.254.169.254/opc/v1/instance/vnics | jq '.[0].subnetCidrBlock'
+
+```
+
+**The Discrepancy:**
+
+* **OCI Console UI:** Shows status **"Attached"** to `10.0.2.0/24`.
+* **Metadata API:** Returned `null`.
+
+### 🏁 Root Cause
+
+The App Server instance suffered from a **VNIC Ghost Attachment**. Due to a race condition in the OCI backend (specific to A1.Flex instances in the Frankfurt region), the Virtual Network Interface Card was provisioned but never successfully bound to the SDN fabric. The instance believed it was connected, but the hypervisor dropped all traffic because the virtual circuit was undefined.
+
+**Resolution:**
+The instance was terminated and recreated to force a fresh VNIC attachment handshake with the SDN controller. Connectivity was immediately restored.
+
+---
+
+## 📂 Visualizing the Failure Mode
+
+This diagram illustrates the specific point of failure discovered during the RCA.
+
+<img src="./architecture-diagrams/Ghost_VNIC_Error.png" alt="OCI SDN Failure Diagram" width="600"/>
+
+---
+
+## 🛠️ Technology Stack
+
+* **Cloud Provider:** Oracle Cloud Infrastructure (OCI)
+* **Compute:** OCI Ampere A1 Compute (ARM64 Architecture)
+* **Networking:** VCN, Private/Public Subnets, Route Tables, NAT Gateway
+* **Server:** NGINX (Reverse Proxy/Web Server)
+* **Tools:** `tcpdump`, `ip route`, `oci-metadata`, Terraform
+
+## 📄 References
+
+* [Detailed Debugging Log (PDF)](https://www.google.com/search?q=./docs/oci_advanced_debugging_guide.pdf) - Full transcript of the 2-day investigation.
+
+## 👨‍💻 Author
+
+**[Your Name]**
+*OCI Architect Associate*
