@@ -1,6 +1,6 @@
 # OCI Multi-Tier Architecture & SDN Root Cause Analysis
 
-## 📖 Project Overview
+##  Project Overview
 
 This repository documents the design and implementation of a scalable **3-Tier Web Application** on Oracle Cloud Infrastructure (OCI). The primary goal was to architect a secure, production-grade cloud environment using strict network isolation.
 
@@ -8,7 +8,7 @@ During the implementation phase on OCI Free Tier (A1.Flex instances), a critical
 
 ---
 
-## 🏗️ Infrastructure & Architecture
+##  Infrastructure & Architecture
 
 The networking layer was configured using best practices for tier isolation, security, and controlled connectivity.
 
@@ -33,7 +33,7 @@ The architecture uses a "Hub and Spoke" logical isolation model within a single 
 
 ### **2. Compute Tier Configuration**
 
-#### **🛡️ Bastion / Jump Host**
+#### **  Bastion / Jump Host**
 
 A secured entry point for managing private resources.
 
@@ -42,7 +42,7 @@ A secured entry point for managing private resources.
 * **Public IP:** Assigned
 * **Security:** SSH keys restricted to admin IP.
 
-#### **🖥️ Private Application Server**
+#### ** Private Application Server**
 
 The backend application server is deployed fully isolated from public exposure.
 
@@ -62,7 +62,7 @@ SSH access is strictly chained via the Jump Host. The NGINX service serves a cus
 
 ---
 
-## 🛑 Incident Report: The "Ghost VNIC" Failure
+##  Incident Report: The "Ghost VNIC" Failure
 
 **Severity:** Critical (Total Loss of Connectivity)
 **Component:** OCI SDN Control Plane / Hypervisor
@@ -81,7 +81,7 @@ curl -v http://10.0.2.38
 
 ---
 
-## 🕵️‍♂️ Technical Deep Dive: Root Cause Analysis
+##  Technical Deep Dive: Root Cause Analysis
 
 We performed a layered OSI investigation to isolate the failure. Below is the step-by-step debugging log.
 
@@ -126,7 +126,7 @@ curl http://169.254.169.254/opc/v1/instance/vnics | jq '.[0].subnetCidrBlock'
 * **OCI Console UI:** Shows status **"Attached"** to `10.0.2.0/24`.
 * **Metadata API:** Returned `null`.
 
-### 🏁 Root Cause
+###  Root Cause
 
 The App Server instance suffered from a **VNIC Ghost Attachment**. Due to a race condition in the OCI backend (specific to A1.Flex instances in the Frankfurt region), the Virtual Network Interface Card was provisioned but never successfully bound to the SDN fabric. The instance believed it was connected, but the hypervisor dropped all traffic because the virtual circuit was undefined.
 
@@ -135,7 +135,7 @@ The instance was terminated and recreated to force a fresh VNIC attachment hands
 
 ---
 
-## 📂 Visualizing the Failure Mode
+##  Visualizing the Failure Mode
 
 This diagram illustrates the specific point of failure discovered during the RCA.
 
@@ -151,11 +151,11 @@ This diagram illustrates the specific point of failure discovered during the RCA
 * **Server:** NGINX (Reverse Proxy/Web Server)
 * **Tools:** `tcpdump`, `ip route`, `oci-metadata`, Terraform
 
-## 📄 References
+##  References
 
-* [Detailed Debugging Log (PDF)](https://www.google.com/search?q=./docs/oci_advanced_debugging_guide.pdf) - Full transcript of the 2-day investigation.
+* [Detailed Debugging Log (PDF)](https://drive.google.com/file/d/1Vhy3CsZIkJ7XZOPA1Py4Lne7q16DZKZo/view?usp=sharing) - Full transcript of the 2-day investigation.
 
-## 👨‍💻 Author
+##  Author
 
-**[Your Name]**
+**Avi Maheshwari**
 *OCI Architect Associate*
